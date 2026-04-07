@@ -1,23 +1,23 @@
 @echo off
 setlocal enabledelayedexpansion
 title Steam Deep Cleaner
-:: Установка зеленого цвета (A - ярко-зеленый)
+:: Set green color (A - bright green)
 color 0A
 
-:: Проверка прав администратора
+:: Check for administrator rights
 >nul 2>&1 "%SYSTEMROOT%\system32\cacls.exe" "%SYSTEMROOT%\system32\config\system"
 if '%errorlevel%' NEQ '0' (
-    echo Требуются права администратора
-    echo Запускаю от имени администратора...
+    echo Administrator privileges required
+    echo Restarting as administrator...
     timeout /t 2 /nobreak >nul
     powershell -Command "Start-Process '%~f0' -Verb RunAs"
     exit /B
 )
 
-echo Начало очистки Steam
+echo Starting Steam cleanup
 echo.
 
-echo 1. Поиск Steam
+echo 1. Searching for Steam
 set "STEAM_PATH="
 
 for /f "tokens=2*" %%a in ('reg query "HKLM\SOFTWARE\WOW6432Node\Valve\Steam" /v "InstallPath" 2^>nul') do (
@@ -40,7 +40,7 @@ if "!STEAM_PATH!"=="" (
 )
 
 if "!STEAM_PATH!"=="" (
-    echo Ошибка: Steam не найден
+    echo Error: Steam not found
     pause
     exit /B 1
 )
@@ -48,48 +48,48 @@ if "!STEAM_PATH!"=="" (
 set "STEAM_PATH=!STEAM_PATH:"=!"
 if "!STEAM_PATH:~-1!"=="\" set "STEAM_PATH=!STEAM_PATH:~0,-1!"
 
-echo Steam найден по адресу: !STEAM_PATH!
+echo Steam found at: !STEAM_PATH!
 echo.
 
-echo 2. Закрытие программ Steam
+echo 2. Closing Steam processes
 tasklist /FI "IMAGENAME eq steam.exe" 2>NUL | find /I "steam.exe" >NUL
 if "!ERRORLEVEL!"=="0" (
-    echo Закрываю процессы...
+    echo Closing processes...
     taskkill /f /im steam.exe /t >nul 2>&1
     taskkill /f /im steamwebhelper.exe /t >nul 2>&1
     taskkill /f /im GameOverlayUI.exe /t >nul 2>&1
     timeout /t 2 /nobreak >nul
 ) else (
-    echo Steam уже закрыт
+    echo Steam is already closed
 )
 echo.
 
-echo 3. Удаление временных папок
-if exist "!STEAM_PATH!\logs" rd /s /q "!STEAM_PATH!\logs" 2>nul & echo Удалена папка logs
-if exist "!STEAM_PATH!\config" rd /s /q "!STEAM_PATH!\config" 2>nul & echo Удалена папка config
-if exist "!STEAM_PATH!\userdata" rd /s /q "!STEAM_PATH!\userdata" 2>nul & echo Удалена папка userdata
-if exist "!STEAM_PATH!\appcache" rd /s /q "!STEAM_PATH!\appcache" 2>nul & echo Удалена папка appcache
-if exist "!STEAM_PATH!\steamapps\downloading" rd /s /q "!STEAM_PATH!\steamapps\downloading" 2>nul & echo Удалена папка временных загрузок
+echo 3. Deleting temporary folders
+if exist "!STEAM_PATH!\logs" rd /s /q "!STEAM_PATH!\logs" 2>nul & echo Deleted logs folder
+if exist "!STEAM_PATH!\config" rd /s /q "!STEAM_PATH!\config" 2>nul & echo Deleted config folder
+if exist "!STEAM_PATH!\userdata" rd /s /q "!STEAM_PATH!\userdata" 2>nul & echo Deleted userdata folder
+if exist "!STEAM_PATH!\appcache" rd /s /q "!STEAM_PATH!\appcache" 2>nul & echo Deleted appcache folder
+if exist "!STEAM_PATH!\steamapps\downloading" rd /s /q "!STEAM_PATH!\steamapps\downloading" 2>nul & echo Deleted temporary downloads folder
 echo.
 
-echo 4. Очистка реестра
+echo 4. Cleaning registry
 reg delete "HKCU\Software\Valve\Steam" /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\WOW6432Node\Valve\Steam" /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Valve\Steam" /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\.steam" /f >nul 2>&1
 reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\RecentDocs\steam" /f >nul 2>&1
-echo Данные в реестре очищены
+echo Registry cleaned
 echo.
 
-echo 5. Удаление временных файлов системы
+echo 5. Removing system temporary files
 del /f /q "%TEMP%\steam*.*" >nul 2>&1
 del /f /q "C:\Windows\Prefetch\STEAM*.pf" >nul 2>&1
-echo Очистка кэша завершена
+echo Cache cleanup completed
 echo.
 
-echo Очистка полностью завершена
-echo При следующем запуске Steam создаст новые файлы
+echo Cleanup fully completed
+echo Steam will recreate necessary files on next launch
 echo.
-echo Нажмите любую клавишу для выхода
+echo Press any key to exit
 pause >nul
 exit /B 0
