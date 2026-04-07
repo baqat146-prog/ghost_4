@@ -1,6 +1,6 @@
 @echo off
 :: ============================================================
-::  STEAM CLEANER - Автоматическая очистка следов Steam
+::  STEAM CLEANER v2.0 - Очистка Steam + Выход из аккаунтов
 ::  Запуск от имени администратора обязателен
 :: ============================================================
 
@@ -15,14 +15,14 @@ IF %ERRORLEVEL% NEQ 0 (
 :: --- Настройка консоли ---
 chcp 65001 >nul
 color 0A
-title STEAM CLEANER - Запущен от имени Администратора
+title STEAM CLEANER v2.0 - Запущен от имени Администратора
 
 cls
 echo.
-echo  ╔══════════════════════════════════════════════════════════╗
-echo  ║                ||||||     ||||||                         ║
-echo  ║                                                          ║
-echo  ╚══════════════════════════════════════════════════════════╝
+echo  ==========================================================
+echo   STEAM CLEANER v2.0  by SteamSweep
+echo   Очистка логов, данных, реестра + Выход из аккаунтов
+echo  ==========================================================
 echo.
 
 :: ============================================================
@@ -33,26 +33,19 @@ echo.
 
 SET "STEAM_PATH="
 
-:: Поиск через реестр (основное место)
 FOR /F "tokens=2*" %%A IN ('reg query "HKCU\SOFTWARE\Valve\Steam" /v "SteamPath" 2^>nul') DO (
     SET "STEAM_PATH=%%B"
 )
-
-:: Если не найдено - попробовать HKLM
 IF NOT DEFINED STEAM_PATH (
     FOR /F "tokens=2*" %%A IN ('reg query "HKLM\SOFTWARE\Valve\Steam" /v "InstallPath" 2^>nul') DO (
         SET "STEAM_PATH=%%B"
     )
 )
-
-:: Если не найдено - попробовать WOW6432Node
 IF NOT DEFINED STEAM_PATH (
     FOR /F "tokens=2*" %%A IN ('reg query "HKLM\SOFTWARE\WOW6432Node\Valve\Steam" /v "InstallPath" 2^>nul') DO (
         SET "STEAM_PATH=%%B"
     )
 )
-
-:: Если реестр пустой - проверить стандартные пути
 IF NOT DEFINED STEAM_PATH (
     IF EXIST "C:\Program Files (x86)\Steam\steam.exe" SET "STEAM_PATH=C:\Program Files (x86)\Steam"
 )
@@ -63,31 +56,28 @@ IF NOT DEFINED STEAM_PATH (
     IF EXIST "%LOCALAPPDATA%\Steam\steam.exe" SET "STEAM_PATH=%LOCALAPPDATA%\Steam"
 )
 
-:: Если всё ещё не найдено
 IF NOT DEFINED STEAM_PATH (
-    echo  [✗] Steam НЕ НАЙДЕН на этом компьютере!
+    echo  [X] Steam НЕ НАЙДЕН на этом компьютере!
     echo.
-    echo  Возможно Steam не установлен или установлен в нестандартную папку.
-    echo  Введите путь вручную (например: D:\Steam) или нажмите Enter для выхода:
+    echo  Введите путь вручную (например: D:\Steam) или Enter для выхода:
     echo.
     SET /P "STEAM_PATH=  Путь: "
     IF NOT DEFINED STEAM_PATH GOTO :END_ERROR
     IF NOT EXIST "%STEAM_PATH%\steam.exe" (
         echo.
-        echo  [✗] По указанному пути steam.exe не найден. Выход.
+        echo  [X] По указанному пути steam.exe не найден. Выход.
         GOTO :END_ERROR
     )
 )
 
-:: Нормализация слешей (реестр возвращает прямые слеши)
 SET "STEAM_PATH=%STEAM_PATH:/=\%"
 
-echo  [✓] Steam найден по пути:
-echo      %STEAM_PATH%
+echo  [OK] Steam найден:
+echo       %STEAM_PATH%
 echo.
 
 :: ============================================================
-:: ШАГ 2: Проверка и закрытие Steam
+:: ШАГ 2: Закрытие Steam
 :: ============================================================
 echo  [*] Проверка: запущен ли Steam...
 tasklist /FI "IMAGENAME eq steam.exe" 2>nul | find /I "steam.exe" >nul
@@ -97,24 +87,56 @@ IF %ERRORLEVEL% EQU 0 (
     taskkill /F /IM steamwebhelper.exe >nul 2>&1
     taskkill /F /IM steamservice.exe >nul 2>&1
     timeout /t 2 /nobreak >nul
-    echo  [✓] Steam закрыт.
+    echo  [OK] Steam закрыт.
 ) ELSE (
-    echo  [✓] Steam не запущен. Продолжаем.
+    echo  [OK] Steam не запущен. Продолжаем.
 )
 echo.
 
 :: ============================================================
-:: ШАГ 3: Подтверждение от пользователя
+:: ШАГ 3: Показ найденных аккаунтов
 :: ============================================================
-echo  ┌─────────────────────────────────────────────────────────┐
-echo  │  Будут удалены следующие папки:                         │
-echo  │                                                         │
-echo  │  • %STEAM_PATH%\logs
-echo  │  • %STEAM_PATH%\config
-echo  │  • %STEAM_PATH%\userdata
-echo  │                                                         │
-echo  │  А также ключи реестра Steam.                          │
-echo  └─────────────────────────────────────────────────────────┘
+echo  [*] Поиск сохранённых аккаунтов Steam...
+echo.
+
+SET "ACCOUNTS_FOUND=0"
+SET "LOGINUSERS=%STEAM_PATH%\config\loginusers.vdf"
+
+IF EXIST "%LOGINUSERS%" (
+    FOR /F "usebackq tokens=*" %%L IN (`findstr /I "AccountName" "%LOGINUSERS%" 2^>nul`) DO (
+        SET /A ACCOUNTS_FOUND+=1
+        echo      %%L
+    )
+    echo.
+    IF %ACCOUNTS_FOUND% GTR 0 (
+        echo  [!] Найдено аккаунтов: %ACCOUNTS_FOUND% — все будут разлогинены
+    ) ELSE (
+        echo  [~] loginusers.vdf пустой
+    )
+) ELSE (
+    echo  [~] loginusers.vdf не найден (аккаунты не сохранены)
+)
+echo.
+
+:: ============================================================
+:: ШАГ 4: Подтверждение
+:: ============================================================
+echo  ----------------------------------------------------------
+echo   Будут выполнены следующие действия:
+echo.
+echo   ВЫХОД ИЗ АККАУНТОВ:
+echo    - loginusers.vdf   (список сохранённых аккаунтов)
+echo    - config.vdf       (токены сессии / автовход)
+echo    - localconfig.vdf  (локальные данные пользователя)
+echo    - AppData\Steam    (кэш сессии Windows)
+echo    - AutoLoginUser    (сброс в реестре)
+echo.
+echo   ОЧИСТКА ПАПОК:
+echo    - logs, config, userdata
+echo.
+echo   ОЧИСТКА РЕЕСТРА:
+echo    - Все ключи Valve\Steam (HKCU + HKLM)
+echo  ----------------------------------------------------------
 echo.
 SET /P "CONFIRM=  Продолжить? (Y/N): "
 IF /I NOT "%CONFIRM%"=="Y" (
@@ -125,115 +147,149 @@ IF /I NOT "%CONFIRM%"=="Y" (
 echo.
 
 :: ============================================================
-:: ШАГ 4: Удаление папки logs
+:: ШАГ 5: Выход из аккаунтов Steam
 :: ============================================================
-echo  [*] Удаление папки LOGS...
+echo  ----------------------------------------------------------
+echo   ВЫХОД ИЗ АККАУНТОВ
+echo  ----------------------------------------------------------
+
+:: loginusers.vdf — список всех сохранённых аккаунтов
+IF EXIST "%STEAM_PATH%\config\loginusers.vdf" (
+    DEL /F /Q "%STEAM_PATH%\config\loginusers.vdf" >nul 2>&1
+    IF EXIST "%STEAM_PATH%\config\loginusers.vdf" (
+        echo  [X] loginusers.vdf — не удалось удалить
+    ) ELSE (
+        echo  [OK] loginusers.vdf — удалён (все аккаунты вышли)
+    )
+) ELSE (
+    echo  [~] loginusers.vdf — не найден
+)
+
+:: config.vdf — токены сессии и автовход
+IF EXIST "%STEAM_PATH%\config\config.vdf" (
+    DEL /F /Q "%STEAM_PATH%\config\config.vdf" >nul 2>&1
+    IF EXIST "%STEAM_PATH%\config\config.vdf" (
+        echo  [X] config.vdf — не удалось удалить
+    ) ELSE (
+        echo  [OK] config.vdf — удалён (токены сессии очищены)
+    )
+) ELSE (
+    echo  [~] config.vdf — не найден
+)
+
+:: localconfig.vdf — локальные данные пользователя
+IF EXIST "%STEAM_PATH%\config\localconfig.vdf" (
+    DEL /F /Q "%STEAM_PATH%\config\localconfig.vdf" >nul 2>&1
+    echo  [OK] localconfig.vdf — удалён
+) ELSE (
+    echo  [~] localconfig.vdf — не найден
+)
+
+:: AppData\Roaming\Steam — кэш сессии Windows
+IF EXIST "%APPDATA%\Steam" (
+    RD /S /Q "%APPDATA%\Steam" >nul 2>&1
+    echo  [OK] AppData\Roaming\Steam — очищен
+) ELSE (
+    echo  [~] AppData\Roaming\Steam — не найден
+)
+
+:: AppData\Local\Steam (если не папка установки)
+IF EXIST "%LOCALAPPDATA%\Steam" (
+    IF /I NOT "%LOCALAPPDATA%\Steam"=="%STEAM_PATH%" (
+        RD /S /Q "%LOCALAPPDATA%\Steam" >nul 2>&1
+        echo  [OK] AppData\Local\Steam — очищен
+    )
+)
+
+:: Реестр: сброс автовхода
+REG DELETE "HKCU\SOFTWARE\Valve\Steam" /v "AutoLoginUser" /f >nul 2>&1
+IF %ERRORLEVEL% EQU 0 (
+    echo  [OK] AutoLoginUser — сброшен (автовход отключён)
+) ELSE (
+    echo  [~] AutoLoginUser — не был установлен
+)
+
+REG DELETE "HKCU\SOFTWARE\Valve\Steam" /v "RememberPassword" /f >nul 2>&1
+IF %ERRORLEVEL% EQU 0 (
+    echo  [OK] RememberPassword — сброшен
+) ELSE (
+    echo  [~] RememberPassword — не найден
+)
+
+REG DELETE "HKCU\SOFTWARE\Valve\Steam" /v "LastGameNameUsed" /f >nul 2>&1
+REG DELETE "HKCU\SOFTWARE\Valve\Steam" /v "LastLoadedGame" /f >nul 2>&1
+
+echo.
+
+:: ============================================================
+:: ШАГ 6: Очистка папок
+:: ============================================================
+echo  ----------------------------------------------------------
+echo   ОЧИСТКА ПАПОК
+echo  ----------------------------------------------------------
+
 IF EXIST "%STEAM_PATH%\logs" (
     RD /S /Q "%STEAM_PATH%\logs" >nul 2>&1
-    IF EXIST "%STEAM_PATH%\logs" (
-        echo  [✗] Не удалось удалить logs (файлы заняты?)
-    ) ELSE (
-        echo  [✓] logs — удалено успешно
-    )
-) ELSE (
-    echo  [~] logs — папка не найдена (уже удалена или не существовала)
-)
+    IF EXIST "%STEAM_PATH%\logs" (echo  [X] logs — не удалось) ELSE (echo  [OK] logs — удалено)
+) ELSE (echo  [~] logs — не найдена)
 
-:: ============================================================
-:: ШАГ 5: Удаление папки config
-:: ============================================================
-echo  [*] Удаление папки CONFIG...
 IF EXIST "%STEAM_PATH%\config" (
     RD /S /Q "%STEAM_PATH%\config" >nul 2>&1
-    IF EXIST "%STEAM_PATH%\config" (
-        echo  [✗] Не удалось удалить config (файлы заняты?)
-    ) ELSE (
-        echo  [✓] config — удалено успешно
-    )
-) ELSE (
-    echo  [~] config — папка не найдена
-)
+    IF EXIST "%STEAM_PATH%\config" (echo  [X] config — не удалось) ELSE (echo  [OK] config — удалено)
+) ELSE (echo  [~] config — не найдена)
 
-:: ============================================================
-:: ШАГ 6: Удаление папки userdata
-:: ============================================================
-echo  [*] Удаление папки USERDATA...
 IF EXIST "%STEAM_PATH%\userdata" (
     RD /S /Q "%STEAM_PATH%\userdata" >nul 2>&1
-    IF EXIST "%STEAM_PATH%\userdata" (
-        echo  [✗] Не удалось удалить userdata (файлы заняты?)
-    ) ELSE (
-        echo  [✓] userdata — удалено успешно
-    )
-) ELSE (
-    echo  [~] userdata — папка не найдена
-)
+    IF EXIST "%STEAM_PATH%\userdata" (echo  [X] userdata — не удалось) ELSE (echo  [OK] userdata — удалено)
+) ELSE (echo  [~] userdata — не найдена)
 
-:: ============================================================
-:: ШАГ 7: Очистка реестра Steam
-:: ============================================================
 echo.
-echo  [*] Очистка ключей реестра Steam...
 
-:: HKCU - пользовательские ключи
+:: ============================================================
+:: ШАГ 7: Очистка реестра
+:: ============================================================
+echo  ----------------------------------------------------------
+echo   ОЧИСТКА РЕЕСТРА
+echo  ----------------------------------------------------------
+
 REG DELETE "HKCU\SOFTWARE\Valve\Steam" /f >nul 2>&1
-IF %ERRORLEVEL% EQU 0 (
-    echo  [✓] HKCU\SOFTWARE\Valve\Steam — удалено
-) ELSE (
-    echo  [~] HKCU\SOFTWARE\Valve\Steam — не найден или уже удалён
-)
+IF %ERRORLEVEL% EQU 0 (echo  [OK] HKCU\...\Valve\Steam — удалено) ELSE (echo  [~] HKCU\...\Valve\Steam — не найден)
 
 REG DELETE "HKCU\SOFTWARE\Valve" /f >nul 2>&1
-IF %ERRORLEVEL% EQU 0 (
-    echo  [✓] HKCU\SOFTWARE\Valve — удалено
-) ELSE (
-    echo  [~] HKCU\SOFTWARE\Valve — не найден
-)
+IF %ERRORLEVEL% EQU 0 (echo  [OK] HKCU\...\Valve — удалено) ELSE (echo  [~] HKCU\...\Valve — не найден)
 
-:: HKLM - системные ключи
 REG DELETE "HKLM\SOFTWARE\Valve\Steam" /f >nul 2>&1
-IF %ERRORLEVEL% EQU 0 (
-    echo  [✓] HKLM\SOFTWARE\Valve\Steam — удалено
-) ELSE (
-    echo  [~] HKLM\SOFTWARE\Valve\Steam — не найден
-)
+IF %ERRORLEVEL% EQU 0 (echo  [OK] HKLM\...\Valve\Steam — удалено) ELSE (echo  [~] HKLM\...\Valve\Steam — не найден)
 
 REG DELETE "HKLM\SOFTWARE\WOW6432Node\Valve\Steam" /f >nul 2>&1
-IF %ERRORLEVEL% EQU 0 (
-    echo  [✓] HKLM\SOFTWARE\WOW6432Node\Valve\Steam — удалено
-) ELSE (
-    echo  [~] HKLM\SOFTWARE\WOW6432Node\Valve\Steam — не найден
-)
+IF %ERRORLEVEL% EQU 0 (echo  [OK] HKLM\WOW6432Node\Valve\Steam — удалено) ELSE (echo  [~] HKLM\WOW6432Node\Valve\Steam — не найден)
 
 REG DELETE "HKLM\SOFTWARE\WOW6432Node\Valve" /f >nul 2>&1
-IF %ERRORLEVEL% EQU 0 (
-    echo  [✓] HKLM\SOFTWARE\WOW6432Node\Valve — удалено
-) ELSE (
-    echo  [~] HKLM\SOFTWARE\WOW6432Node\Valve — не найден
-)
+IF %ERRORLEVEL% EQU 0 (echo  [OK] HKLM\WOW6432Node\Valve — удалено) ELSE (echo  [~] HKLM\WOW6432Node\Valve — не найден)
 
-:: Автозапуск Steam
 REG DELETE "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "Steam" /f >nul 2>&1
-IF %ERRORLEVEL% EQU 0 (
-    echo  [✓] Автозапуск Steam из реестра — удалён
-) ELSE (
-    echo  [~] Автозапуск Steam — не найден
-)
+IF %ERRORLEVEL% EQU 0 (echo  [OK] Автозапуск Steam — удалён) ELSE (echo  [~] Автозапуск Steam — не найден)
+
+echo.
 
 :: ============================================================
-:: ШАГ 8: Итог
+:: ИТОГ
 :: ============================================================
+echo  ==========================================================
+echo   OK  ВСЯ ОЧИСТКА ЗАВЕРШЕНА УСПЕШНО
+echo  ==========================================================
 echo.
-echo  ╔══════════════════════════════════════════════════════════╗
-echo  ║            ✓  ОЧИСТКА ЗАВЕРШЕНА УСПЕШНО  ✓              ║
-echo  ╠══════════════════════════════════════════════════════════╣
-echo  ║  Удалено:                                               ║
-echo  ║   • Папка logs                                          ║
-echo  ║   • Папка config                                        ║
-echo  ║   • Папка userdata                                      ║
-echo  ║   • Ключи реестра Valve/Steam (HKCU + HKLM)            ║
-echo  ║   • Запись автозапуска Steam                            ║
-echo  ╚══════════════════════════════════════════════════════════╝
+echo   ВЫХОД ИЗ АККАУНТОВ:
+echo    [OK] loginusers.vdf удалён — все аккаунты разлогинены
+echo    [OK] config.vdf удалён — сессии и токены сброшены
+echo    [OK] AutoLoginUser сброшен — автовход отключён
+echo    [OK] AppData\Steam очищен
+echo.
+echo   ПАПКИ: logs / config / userdata — очищены
+echo   РЕЕСТР: Valve\Steam HKCU + HKLM — очищен
+echo.
+echo   При следующем запуске Steam потребует войти в аккаунт.
+echo  ==========================================================
 echo.
 echo  Нажмите любую клавишу для выхода...
 pause >nul
@@ -241,8 +297,7 @@ EXIT /B 0
 
 :END_ERROR
 echo.
-echo  [✗] Скрипт завершён с ошибкой.
-echo  Нажмите любую клавишу для выхода...
+echo  [X] Скрипт завершён с ошибкой.
 pause >nul
 EXIT /B 1
 
