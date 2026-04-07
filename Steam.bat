@@ -1,109 +1,252 @@
 @echo off
+:: ============================================================
+::  STEAM CLEANER - Автоматическая очистка следов Steam
+::  Запуск от имени администратора обязателен
+:: ============================================================
+
+:: --- Автоподъём прав администратора ---
+NET SESSION >nul 2>&1
+IF %ERRORLEVEL% NEQ 0 (
+    echo Запрос прав администратора...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    EXIT /B
+)
+
+:: --- Настройка консоли ---
 chcp 65001 >nul
-title Steam Cleaner
 color 0A
+title STEAM CLEANER - Запущен от имени Администратора
 
-echo ============================================
-echo         ОЧИСТКА STEAM
-echo ============================================
+cls
+echo.
+echo  ╔══════════════════════════════════════════════════════════╗
+echo  ║                ||||||     ||||||                         ║
+echo  ║                                                          ║
+echo  ╚══════════════════════════════════════════════════════════╝
 echo.
 
-set "STEAM_PATH="
+:: ============================================================
+:: ШАГ 1: Поиск расположения Steam
+:: ============================================================
+echo  [*] Поиск установленного Steam...
+echo.
 
-for %%P in (
-    "C:\Program Files (x86)\Steam"
-    "C:\Program Files\Steam"
-    "D:\Steam"
-    "D:\Program Files (x86)\Steam"
-    "E:\Steam"
-) do (
-    if exist "%%~P\steam.exe" (
-        set "STEAM_PATH=%%~P"
-        goto :found
+SET "STEAM_PATH="
+
+:: Поиск через реестр (основное место)
+FOR /F "tokens=2*" %%A IN ('reg query "HKCU\SOFTWARE\Valve\Steam" /v "SteamPath" 2^>nul') DO (
+    SET "STEAM_PATH=%%B"
+)
+
+:: Если не найдено - попробовать HKLM
+IF NOT DEFINED STEAM_PATH (
+    FOR /F "tokens=2*" %%A IN ('reg query "HKLM\SOFTWARE\Valve\Steam" /v "InstallPath" 2^>nul') DO (
+        SET "STEAM_PATH=%%B"
     )
 )
 
-for %%R in (
-    "HKLM\SOFTWARE\WOW6432Node\Valve\Steam"
-    "HKLM\SOFTWARE\Valve\Steam"
-    "HKCU\SOFTWARE\Valve\Steam"
-) do (
-    for /f "tokens=2*" %%A in ('reg query "%%~R" /v InstallPath 2^>nul') do (
-        if exist "%%B\steam.exe" (
-            set "STEAM_PATH=%%B"
-            goto :found
-        )
+:: Если не найдено - попробовать WOW6432Node
+IF NOT DEFINED STEAM_PATH (
+    FOR /F "tokens=2*" %%A IN ('reg query "HKLM\SOFTWARE\WOW6432Node\Valve\Steam" /v "InstallPath" 2^>nul') DO (
+        SET "STEAM_PATH=%%B"
     )
 )
 
-echo [!] Steam не найден автоматически.
-set /p STEAM_PATH="Введите путь к Steam (например C:\Games\Steam): "
-
-if not exist "%STEAM_PATH%\steam.exe" (
-    echo [X] Неверный путь. Выход.
-    pause
-    exit /b 1
+:: Если реестр пустой - проверить стандартные пути
+IF NOT DEFINED STEAM_PATH (
+    IF EXIST "C:\Program Files (x86)\Steam\steam.exe" SET "STEAM_PATH=C:\Program Files (x86)\Steam"
+)
+IF NOT DEFINED STEAM_PATH (
+    IF EXIST "C:\Program Files\Steam\steam.exe" SET "STEAM_PATH=C:\Program Files\Steam"
+)
+IF NOT DEFINED STEAM_PATH (
+    IF EXIST "%LOCALAPPDATA%\Steam\steam.exe" SET "STEAM_PATH=%LOCALAPPDATA%\Steam"
 )
 
-:found
-echo [OK] Steam найден: %STEAM_PATH%
+:: Если всё ещё не найдено
+IF NOT DEFINED STEAM_PATH (
+    echo  [✗] Steam НЕ НАЙДЕН на этом компьютере!
+    echo.
+    echo  Возможно Steam не установлен или установлен в нестандартную папку.
+    echo  Введите путь вручную (например: D:\Steam) или нажмите Enter для выхода:
+    echo.
+    SET /P "STEAM_PATH=  Путь: "
+    IF NOT DEFINED STEAM_PATH GOTO :END_ERROR
+    IF NOT EXIST "%STEAM_PATH%\steam.exe" (
+        echo.
+        echo  [✗] По указанному пути steam.exe не найден. Выход.
+        GOTO :END_ERROR
+    )
+)
+
+:: Нормализация слешей (реестр возвращает прямые слеши)
+SET "STEAM_PATH=%STEAM_PATH:/=\%"
+
+echo  [✓] Steam найден по пути:
+echo      %STEAM_PATH%
 echo.
 
-echo [1/5] Завершение процессов Steam...
-taskkill /f /im steam.exe          >nul 2>&1
-taskkill /f /im steamwebhelper.exe >nul 2>&1
-taskkill /f /im GameOverlayUI.exe  >nul 2>&1
-taskkill /f /im steamservice.exe   >nul 2>&1
-timeout /t 3 /nobreak >nul
-echo      Готово.
-echo.
-
-echo [2/5] Удаление папки logs...
-if exist "%STEAM_PATH%\logs" (
-    rd /s /q "%STEAM_PATH%\logs"
-    echo      Удалено: %STEAM_PATH%\logs
-) else (
-    echo      Папка logs не найдена.
+:: ============================================================
+:: ШАГ 2: Проверка и закрытие Steam
+:: ============================================================
+echo  [*] Проверка: запущен ли Steam...
+tasklist /FI "IMAGENAME eq steam.exe" 2>nul | find /I "steam.exe" >nul
+IF %ERRORLEVEL% EQU 0 (
+    echo  [!] Steam запущен. Закрываем принудительно...
+    taskkill /F /IM steam.exe >nul 2>&1
+    taskkill /F /IM steamwebhelper.exe >nul 2>&1
+    taskkill /F /IM steamservice.exe >nul 2>&1
+    timeout /t 2 /nobreak >nul
+    echo  [✓] Steam закрыт.
+) ELSE (
+    echo  [✓] Steam не запущен. Продолжаем.
 )
 echo.
 
-echo [3/5] Удаление папки config...
-if exist "%STEAM_PATH%\config" (
-    rd /s /q "%STEAM_PATH%\config"
-    echo      Удалено: %STEAM_PATH%\config
-) else (
-    echo      Папка config не найдена.
+:: ============================================================
+:: ШАГ 3: Подтверждение от пользователя
+:: ============================================================
+echo  ┌─────────────────────────────────────────────────────────┐
+echo  │  Будут удалены следующие папки:                         │
+echo  │                                                         │
+echo  │  • %STEAM_PATH%\logs
+echo  │  • %STEAM_PATH%\config
+echo  │  • %STEAM_PATH%\userdata
+echo  │                                                         │
+echo  │  А также ключи реестра Steam.                          │
+echo  └─────────────────────────────────────────────────────────┘
+echo.
+SET /P "CONFIRM=  Продолжить? (Y/N): "
+IF /I NOT "%CONFIRM%"=="Y" (
+    echo.
+    echo  [!] Операция отменена пользователем.
+    GOTO :END_CANCEL
 )
 echo.
 
-echo [4/5] Удаление папки userdata...
-if exist "%STEAM_PATH%\userdata" (
-    rd /s /q "%STEAM_PATH%\userdata"
-    echo      Удалено: %STEAM_PATH%\userdata
-) else (
-    echo      Папка userdata не найдена.
+:: ============================================================
+:: ШАГ 4: Удаление папки logs
+:: ============================================================
+echo  [*] Удаление папки LOGS...
+IF EXIST "%STEAM_PATH%\logs" (
+    RD /S /Q "%STEAM_PATH%\logs" >nul 2>&1
+    IF EXIST "%STEAM_PATH%\logs" (
+        echo  [✗] Не удалось удалить logs (файлы заняты?)
+    ) ELSE (
+        echo  [✓] logs — удалено успешно
+    )
+) ELSE (
+    echo  [~] logs — папка не найдена (уже удалена или не существовала)
 )
-echo.
 
-echo [5/5] Очистка следов в реестре...
-reg delete "HKCU\SOFTWARE\Valve\Steam\Apps"               /f >nul 2>&1
-reg delete "HKCU\SOFTWARE\Valve\Steam\ActiveProcess"      /f >nul 2>&1
-reg delete "HKCU\SOFTWARE\Valve\Steam\StartupMode"        /f >nul 2>&1
-reg delete "HKCU\SOFTWARE\Valve\Steam\AlreadyReportedBug" /f >nul 2>&1
-reg delete "HKCU\SOFTWARE\Valve\Steam"                    /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\WOW6432Node\Valve\Steam"        /f >nul 2>&1
-reg delete "HKLM\SOFTWARE\Valve\Steam"                    /f >nul 2>&1
-del /f /q "%APPDATA%\Microsoft\Windows\Recent\steam*.*"   >nul 2>&1
-del /f /q "%APPDATA%\Microsoft\Windows\Recent\Steam*.*"   >nul 2>&1
-del /f /q "%TEMP%\steam*.*"                               >nul 2>&1
-del /f /q "%TEMP%\Steam*.*"                               >nul 2>&1
-echo      Готово.
-echo.
+:: ============================================================
+:: ШАГ 5: Удаление папки config
+:: ============================================================
+echo  [*] Удаление папки CONFIG...
+IF EXIST "%STEAM_PATH%\config" (
+    RD /S /Q "%STEAM_PATH%\config" >nul 2>&1
+    IF EXIST "%STEAM_PATH%\config" (
+        echo  [✗] Не удалось удалить config (файлы заняты?)
+    ) ELSE (
+        echo  [✓] config — удалено успешно
+    )
+) ELSE (
+    echo  [~] config — папка не найдена
+)
 
-echo ============================================
-echo   [OK] Очистка завершена!
-echo        Удалены: logs, config, userdata
-echo        Реестр очищен.
-echo ============================================
+:: ============================================================
+:: ШАГ 6: Удаление папки userdata
+:: ============================================================
+echo  [*] Удаление папки USERDATA...
+IF EXIST "%STEAM_PATH%\userdata" (
+    RD /S /Q "%STEAM_PATH%\userdata" >nul 2>&1
+    IF EXIST "%STEAM_PATH%\userdata" (
+        echo  [✗] Не удалось удалить userdata (файлы заняты?)
+    ) ELSE (
+        echo  [✓] userdata — удалено успешно
+    )
+) ELSE (
+    echo  [~] userdata — папка не найдена
+)
+
+:: ============================================================
+:: ШАГ 7: Очистка реестра Steam
+:: ============================================================
 echo.
-pause
+echo  [*] Очистка ключей реестра Steam...
+
+:: HKCU - пользовательские ключи
+REG DELETE "HKCU\SOFTWARE\Valve\Steam" /f >nul 2>&1
+IF %ERRORLEVEL% EQU 0 (
+    echo  [✓] HKCU\SOFTWARE\Valve\Steam — удалено
+) ELSE (
+    echo  [~] HKCU\SOFTWARE\Valve\Steam — не найден или уже удалён
+)
+
+REG DELETE "HKCU\SOFTWARE\Valve" /f >nul 2>&1
+IF %ERRORLEVEL% EQU 0 (
+    echo  [✓] HKCU\SOFTWARE\Valve — удалено
+) ELSE (
+    echo  [~] HKCU\SOFTWARE\Valve — не найден
+)
+
+:: HKLM - системные ключи
+REG DELETE "HKLM\SOFTWARE\Valve\Steam" /f >nul 2>&1
+IF %ERRORLEVEL% EQU 0 (
+    echo  [✓] HKLM\SOFTWARE\Valve\Steam — удалено
+) ELSE (
+    echo  [~] HKLM\SOFTWARE\Valve\Steam — не найден
+)
+
+REG DELETE "HKLM\SOFTWARE\WOW6432Node\Valve\Steam" /f >nul 2>&1
+IF %ERRORLEVEL% EQU 0 (
+    echo  [✓] HKLM\SOFTWARE\WOW6432Node\Valve\Steam — удалено
+) ELSE (
+    echo  [~] HKLM\SOFTWARE\WOW6432Node\Valve\Steam — не найден
+)
+
+REG DELETE "HKLM\SOFTWARE\WOW6432Node\Valve" /f >nul 2>&1
+IF %ERRORLEVEL% EQU 0 (
+    echo  [✓] HKLM\SOFTWARE\WOW6432Node\Valve — удалено
+) ELSE (
+    echo  [~] HKLM\SOFTWARE\WOW6432Node\Valve — не найден
+)
+
+:: Автозапуск Steam
+REG DELETE "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "Steam" /f >nul 2>&1
+IF %ERRORLEVEL% EQU 0 (
+    echo  [✓] Автозапуск Steam из реестра — удалён
+) ELSE (
+    echo  [~] Автозапуск Steam — не найден
+)
+
+:: ============================================================
+:: ШАГ 8: Итог
+:: ============================================================
+echo.
+echo  ╔══════════════════════════════════════════════════════════╗
+echo  ║            ✓  ОЧИСТКА ЗАВЕРШЕНА УСПЕШНО  ✓              ║
+echo  ╠══════════════════════════════════════════════════════════╣
+echo  ║  Удалено:                                               ║
+echo  ║   • Папка logs                                          ║
+echo  ║   • Папка config                                        ║
+echo  ║   • Папка userdata                                      ║
+echo  ║   • Ключи реестра Valve/Steam (HKCU + HKLM)            ║
+echo  ║   • Запись автозапуска Steam                            ║
+echo  ╚══════════════════════════════════════════════════════════╝
+echo.
+echo  Нажмите любую клавишу для выхода...
+pause >nul
+EXIT /B 0
+
+:END_ERROR
+echo.
+echo  [✗] Скрипт завершён с ошибкой.
+echo  Нажмите любую клавишу для выхода...
+pause >nul
+EXIT /B 1
+
+:END_CANCEL
+echo  Нажмите любую клавишу для выхода...
+pause >nul
+EXIT /B 0
